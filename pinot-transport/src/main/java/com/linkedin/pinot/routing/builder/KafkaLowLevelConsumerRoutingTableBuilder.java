@@ -45,7 +45,7 @@ import com.linkedin.pinot.routing.ServerToSegmentSetMap;
  */
 public class KafkaLowLevelConsumerRoutingTableBuilder extends AbstractRoutingTableBuilder {
   private static final Logger LOGGER = LoggerFactory.getLogger(KafkaLowLevelConsumerRoutingTableBuilder.class);
-  private static final int routingTableCount = 10;
+  private static final int routingTableCount = 500;
   private final Random _random = new Random();
 
   @Override
@@ -170,6 +170,45 @@ public class KafkaLowLevelConsumerRoutingTableBuilder extends AbstractRoutingTab
       }
     }
 
+    // jfim HACK Compute server to segment map
+    Map<String, Set<SegmentName>> segmentsForServer = new HashMap<>();
+    Map<SegmentName, String[]> serversAndSegmentArray = new HashMap<>();
+    Set<SegmentName> allSegments = new HashSet<>();
+    SegmentName[] allSegmentsArray;
+    for (String segmentNameStr : externalView.getPartitionSet()) {
+      SegmentName segmentName = new LLCSegmentName(segmentNameStr);
+      ArrayList<String> serversForSegment = new ArrayList<>();
+      for (Map.Entry<String, String> serverAndState : externalView.getStateMap(segmentNameStr).entrySet()) {
+        String server = serverAndState.getKey();
+        String state = serverAndState.getValue();
+        boolean assign = false;
+
+        if ("ONLINE".equals(state)) {
+          assign = true;
+        }
+
+        if ("CONSUMING".equals(state) && allowedSegmentInConsumingStateByKafkaPartition.get(segmentName.getPartitionRange()).equals(segmentName)) {
+          assign = true;
+        }
+
+        if (assign) {
+          Set<SegmentName> values = segmentsForServer.get(server);
+          if (values == null) {
+            values = new HashSet<>();
+            segmentsForServer.put(server, values);
+          }
+
+          values.add(segmentName);
+
+          serversForSegment.add(server);
+          allSegments.add(segmentName);
+        }
+      }
+
+      serversAndSegmentArray.put(segmentName, serversForSegment.toArray(new String[serversForSegment.size()]));
+    }
+    allSegmentsArray = allSegments.toArray(new SegmentName[allSegments.size()]);
+
     // 3. Sort all the segments to be used during assignment in ascending order of replicas
 
     // PriorityQueue throws IllegalArgumentException when given a size of zero
@@ -234,8 +273,38 @@ public class KafkaLowLevelConsumerRoutingTableBuilder extends AbstractRoutingTab
     for(int i = 0; i < routingTableCount; ++i) {
       Map<String, Set<String>> instanceToSegmentSetMap = new HashMap<String, Set<String>>();
 
+      // jfim HACK Build a subset of all servers
+      Set<String> allowedServers = new HashSet<>();
+      Set<SegmentName> unassignedSegments = new HashSet<>(allSegments);
+
+      SegmentName seedSegment = allSegmentsArray[_random.nextInt(allSegmentsArray.length)];
+      String[] serversForSegment = serversAndSegmentArray.get(seedSegment);
+      String seedServer = serversForSegment[_random.nextInt(serversForSegment.length)];
+      allowedServers.add(seedServer);
+      unassignedSegments.removeAll(segmentsForServer.get(seedServer));
+
+      while (!unassignedSegments.isEmpty()) {
+        SegmentName unassignedSegment = unassignedSegments.iterator().next();
+        serversForSegment = serversAndSegmentArray.get(unassignedSegment);
+        String randomServer = serversForSegment[_random.nextInt(serversForSegment.length)];
+        allowedServers.add(randomServer);
+        unassignedSegments.removeAll(segmentsForServer.get(randomServer));
+      }
+
+      // jfim HACK PriorityQueue<Pair<String, Set<String>>> segmentToReplicaSetQueueCopy = new PriorityQueue<Pair<String, Set<String>>>(segmentToReplicaSetQueue);
+
       PriorityQueue<Pair<String, Set<String>>> segmentToReplicaSetQueueCopy =
-          new PriorityQueue<Pair<String, Set<String>>>(segmentToReplicaSetQueue);
+          new PriorityQueue<Pair<String, Set<String>>>();
+
+      for (Pair<String, Set<String>> segmentAndAllReplicasSet : segmentToReplicaSetQueue) {
+        String segmentName = segmentAndAllReplicasSet.getKey();
+        Set<String> allReplicasForSegment = segmentAndAllReplicasSet.getRight();
+        Set<String> allowedReplicasForSegment = new HashSet<>(allReplicasForSegment);
+        allowedReplicasForSegment.retainAll(allowedServers);
+        segmentToReplicaSetQueueCopy.add(new ImmutablePair<String, Set<String>>(segmentName, allowedReplicasForSegment));
+      }
+
+      // jfim HACK end
 
       while (!segmentToReplicaSetQueueCopy.isEmpty()) {
         Pair<String, Set<String>> segmentAndValidReplicaSet = segmentToReplicaSetQueueCopy.poll();

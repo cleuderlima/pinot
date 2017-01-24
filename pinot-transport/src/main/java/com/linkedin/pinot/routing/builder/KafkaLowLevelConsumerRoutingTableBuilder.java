@@ -45,12 +45,24 @@ import com.linkedin.pinot.routing.ServerToSegmentSetMap;
  */
 public class KafkaLowLevelConsumerRoutingTableBuilder extends GeneratorBasedRoutingTableBuilder {
   private static final Logger LOGGER = LoggerFactory.getLogger(KafkaLowLevelConsumerRoutingTableBuilder.class);
-  private static final int routingTableCount = 500;
   private final Random _random = new Random();
+  private int TARGET_SERVER_COUNT_PER_QUERY = 8;
 
   @Override
   public void init(Configuration configuration) {
-    // No configuration at the moment
+    // TODO jfim This is a broker-level configuration for now, until we refactor the configuration of the routing table to allow per-table routing settings
+    if (configuration.containsKey("realtimeTargetServerCountPerQuery")) {
+      final String targetServerCountPerQuery = configuration.getString("realtimeTargetServerCountPerQuery");
+      try {
+        TARGET_SERVER_COUNT_PER_QUERY = Integer.parseInt(targetServerCountPerQuery);
+      } catch (Exception e) {
+        LOGGER.warn(
+            "Could not get the target server count per query from configuration value {}, keeping default value {}",
+            targetServerCountPerQuery, TARGET_SERVER_COUNT_PER_QUERY, e);
+      }
+    } else {
+      LOGGER.info("Using default value for target server count of {}", TARGET_SERVER_COUNT_PER_QUERY);
+    }
   }
 
   @Override
@@ -115,7 +127,7 @@ public class KafkaLowLevelConsumerRoutingTableBuilder extends GeneratorBasedRout
     private String[] instanceArray;
 
     protected KafkaLowLevelConsumerRoutingTableGenerator() {
-      super(8, _random);
+      super(TARGET_SERVER_COUNT_PER_QUERY, _random);
     }
 
     @Override

@@ -152,8 +152,8 @@ public class LargeClusterRoutingTableBuilder extends GeneratorBasedRoutingTableB
   @Override
   public void init(Configuration configuration) {
     // TODO jfim This is a broker-level configuration for now, until we refactor the configuration of the routing table to allow per-table routing settings
-    if (configuration.containsKey("targetServerCountPerQuery")) {
-      final String targetServerCountPerQuery = configuration.getString("targetServerCountPerQuery");
+    if (configuration.containsKey("offlineTargetServerCountPerQuery")) {
+      final String targetServerCountPerQuery = configuration.getString("offlineTargetServerCountPerQuery");
       try {
         TARGET_SERVER_COUNT_PER_QUERY = Integer.parseInt(targetServerCountPerQuery);
       } catch (Exception e) {
@@ -161,6 +161,8 @@ public class LargeClusterRoutingTableBuilder extends GeneratorBasedRoutingTableB
             "Could not get the target server count per query from configuration value {}, keeping default value {}",
             targetServerCountPerQuery, TARGET_SERVER_COUNT_PER_QUERY, e);
       }
+    } else {
+      LOGGER.info("Using default value for target server count of {}", TARGET_SERVER_COUNT_PER_QUERY);
     }
   }
 }

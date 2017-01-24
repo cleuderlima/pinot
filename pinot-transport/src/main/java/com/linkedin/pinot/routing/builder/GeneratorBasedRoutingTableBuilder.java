@@ -187,12 +187,10 @@ public abstract class GeneratorBasedRoutingTableBuilder extends AbstractRoutingT
 
       // Create the routing table from the segment -> instances priority queue
       Map<String, Set<String>> instanceToSegmentSetMap = new HashMap<>();
-      int[] replicas = new int[10];
       while(!segmentToReplicaSetQueue.isEmpty()) {
         Pair<String, Set<String>> segmentAndReplicaSet = segmentToReplicaSetQueue.poll();
         String segment = segmentAndReplicaSet.getKey();
         Set<String> replicaSet = segmentAndReplicaSet.getValue();
-        replicas[replicaSet.size() - 1]++;
 
         String instance = pickWeightedRandomReplica(replicaSet, instanceToSegmentSetMap, random);
         if (instance != null) {
